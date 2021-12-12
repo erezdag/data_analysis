@@ -1,0 +1,36 @@
+#IMPORT MODULES REQUIRED FOR THE OPERATION:
+
+import os
+import pandas as pd
+from pathlib import Path
+import re
+
+#CHOOSE THE CORRECT FOLDER AND CHANGE PWD:
+
+mypath = 'C:\\Users\ארז דגן\Textfolder'
+path = Path(mypath)
+os.chdir(mypath)
+files = os.listdir(mypath)
+
+#CHANGE THE FILES_END TO THE CORRECT ONE:
+
+for f in path.iterdir():
+    if f.is_file() and f.suffix in ['.csv']:
+        f.rename(f.with_suffix('.txt'))
+        
+#CREATE DATAFRAMES, AND ADD THEM TO A LIST:  
+
+appended_df = []
+for file in files:
+    df = pd.read_csv(file,names=list(range(15)),header=None,skiprows=1)
+    appended_df.append(df)
+    
+#CONCAT THE LIST TO ONE BIG DATA FRAME, AND US GROUPED AND GROUPBY TO GROUP THE TIMESTAMPS IN A MINUTE GAP:
+
+df1 = pd.concat(appended_df, axis=0, ignore_index=True)
+df2 = pd.to_datetime(df1[0])
+mydir = {'Wind Dir':list(df1[2]),'Wind Speed':list(df1[3]),'Corrected Dir':list(df1[4]),'Pressure':list(df1[5]),'Relative Humidity':list(df1[6]),'Temperature':list(df1[7]),'DewPoint':list(df1[8]),'Precipitation Total':list(df1[9]),'Precipitation intensity': list(df1[10])}
+df_new= pd.DataFrame(mydir,index=df2)
+df_grouped = df_new.groupby(pd.Grouper(freq='1min',origin='start')).mean()
+df_grouped
+ 
