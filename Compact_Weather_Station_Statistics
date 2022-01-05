@@ -1,36 +1,206 @@
-#IMPORT MODULES REQUIRED FOR THE OPERATION:
+pip install windrose
 
 import os
 import pandas as pd
 from pathlib import Path
 import re
+import numpy as np
+from datetime import datetime,timedelta
 
-#CHOOSE THE CORRECT FOLDER AND CHANGE PWD:
+from windrose import WindroseAxes
+from matplotlib import pyplot as plt
+import matplotlib.cm as cm
+import numpy as np
 
-mypath = 'C:\\Users\ארז דגן\Textfolder'
-path = Path(mypath)
-os.chdir(mypath)
-files = os.listdir(mypath)
+time_scale = 'HOUR'   #UPPER LETTERS
+time_gap = 'hour'     #THIS ONE IS FOR THE TIME_DIVIDER FUNCTION
+freq_time = 'H'       #FIRST LETTER UPPER ('H' for hours, 'MIN' for minutes)
+num_gap = 1           #NUMBER OF TIME UNITS
+your_bin_num = 20  
+df_list = []
 
-#CHANGE THE FILES_END TO THE CORRECT ONE:
 
-for f in path.iterdir():
-    if f.is_file() and f.suffix in ['.csv']:
-        f.rename(f.with_suffix('.txt'))
-        
-#CREATE DATAFRAMES, AND ADD THEM TO A LIST:  
-
-appended_df = []
-for file in files:
-    df = pd.read_csv(file,names=list(range(15)),header=None,skiprows=1)
-    appended_df.append(df)
+def bins_creator(your_bin):
     
-#CONCAT THE LIST TO ONE BIG DATA FRAME, AND US GROUPED AND GROUPBY TO GROUP THE TIMESTAMPS IN A MINUTE GAP:
+    if (360%your_bin)!=0:
+        print('You should insert number which when 360 divided by him, return integer.')
+        
+    else:
+        
+        bins_list = []
+        n = 360//your_bin
+       
+        num = 0
+        int_list = [0]
+        
+        for i in range(n):
+            
+            num += your_bin
+            int_list.append(num)
+        
+        for k in range(len(int_list)-1):
+            
+            gap = str(int_list[k])+'-'+str(int_list[k+1])
+            bins_list.append(gap)
+            
+        return bins_list,int_list
 
-df1 = pd.concat(appended_df, axis=0, ignore_index=True)
-df2 = pd.to_datetime(df1[0])
-mydir = {'Wind Dir':list(df1[2]),'Wind Speed':list(df1[3]),'Corrected Dir':list(df1[4]),'Pressure':list(df1[5]),'Relative Humidity':list(df1[6]),'Temperature':list(df1[7]),'DewPoint':list(df1[8]),'Precipitation Total':list(df1[9]),'Precipitation intensity': list(df1[10])}
-df_new= pd.DataFrame(mydir,index=df2)
-df_grouped = df_new.groupby(pd.Grouper(freq='1min',origin='start')).mean()
-df_grouped
- 
+    
+#CHECK:
+print(bins_creator(30))
+print(bins_creator(60))
+print(bins_creator(7))
+
+
+
+def df_creator(mypath,your_bin):
+
+    path = Path(mypath)
+    os.chdir(mypath)
+    files = os.listdir(mypath)
+
+    #CHANGE THE FILES EXTENTION TO THE CORRECT ONE:
+
+    for f in path.iterdir():
+        if f.is_file() and f.suffix in ['.csv']:
+            f.rename(f.with_suffix('.txt'))
+
+    #CREATE DATAFRAMES, AND ADD THEM TO A LIST:  
+
+    appended_df = []
+    for file in files:
+        df = pd.read_csv(file,names=list(range(15)),header=None,skiprows=1)
+        appended_df.append(df)
+
+    df1 = pd.concat(appended_df, axis=0, ignore_index=True)    
+    df2 = pd.to_datetime(df1[0])
+    mydir = {'Wind Dir':list(df1[2]),'Wind Speed':list(df1[3]),'Corrected Dir':list(df1[4]),'Pressure':list(df1[5]),'Relative Humidity':list(df1[6]),'Temperature':list(df1[7]),'DewPoint':list(df1[8]),'Precipitation Total':list(df1[9]),'Precipitation intensity': list(df1[10])}
+    
+    bin_tup = bins_creator(your_bin)
+    bins = bin_tup[1]
+    labels = bin_tup[0]
+    
+    df_wind = pd.DataFrame(mydir,index=df2)
+    cut_obj = pd.cut(df_wind['Wind Dir'],bins,labels=labels)
+    df_wind['dir cat']=cut_obj.values
+    
+    return df_wind
+    
+    
+df_new = df_creator(mypath,your_bin_num)
+
+#THIS FUNCTION TAKES TIMEDELTA, AND RETURN LIST OF TUPLES, FROM THE FIRST OBJECT IN THE DATAFRAME, TO THE LAST ONE THERE.
+#WHIT THOSE LISTS, WE CAN EASILTY USE GROUPBY AS WE WISH.
+#THERE IS SOME PROBLEM WITHIN THE CODE. WHEN I'M RERUNNING THE CODE, I DON'T GET THE DESIRED RESULTS.
+
+
+
+
+def time_divider(dataframe,num,timescale):
+    
+    tup_list = []
+    
+    #DELTA SHOULD BE A STRING. 
+    #WHAT IS THE OUTPUT THAT I WANT TO GET? LISTS OF TUPLES.
+    #LET'S ASSUME THAT THE INDEX IS DATETIME.
+    #DATETYPE SHOULD BE HOUR/MINUTE.
+    
+    firstdatetime = dataframe.index[0]
+    secdatetime = dataframe.index[-1]
+    timegap = None
+    time_delta = None
+    
+    if timescale == time_gap:
+        time_delta = timedelta(hours=num)
+        
+    else:
+        time_delta = timedelta(minutes=num)
+        
+    timescale = None
+
+    
+    dynamic_date = firstdatetime
+       
+    for date in range(len(dataframe.index)):
+
+        tup = (dynamic_date,dynamic_date+time_delta)
+        tup_list.append(tup)
+        dynamic_date = dynamic_date+time_delta
+
+        if tup[1]>dataframe.index[-1]:
+            break
+            
+    return tup_list
+
+
+timegap = None
+time_delta = None
+
+# CHECK:
+
+# min_gaps = time_divider(df_wind2,1,'minute')
+# hour_gaps = time_divider(df_wind2,1,'hour')
+
+# print(min_gaps)
+# print(hour_gaps)
+
+
+
+#THIS FUNCTION TAKES DATEFRAME AND LIST OF TUPLES, AND SPLIT THE DATAFRAME WITHIN THE DATES RANGE.
+#!!!I HAVE TO CHANGE THE LOC FUNCTION THAT IT WOULDN'T TAKE THE FIRST VALUE (OR SOMETHING LIKE THAT)
+
+def split_datetimes(your_df):
+    
+    my_new_var = time_divider(your_df,num_gap,time_gap)
+
+    for tup in my_new_var:
+        
+        start = tup[0]
+        end = tup[1]
+    
+        df_temp = your_df.loc[start:end]
+        df_temp = df_temp[:-1]
+        df_list.append(df_temp)
+        
+    return df_list
+    
+#THIS FUNCTION GET AS AN INPUT DATAFRAME FROM SPLIT_DATETIME, AND RETURN COMPLETE DATAFRAME.
+#IT DOES IT BY GROUPBY THE PARTICULAR TIME, ADD BINS COLUMNS, AND CONCAT FOR A COMPLETE DATAFRAME.
+
+bins_var = bins_creator(your_bin_num)[0]
+
+def group_bin_concat(raw_df):
+
+    final_list = []
+    result_list = split_datetimes(raw_df)
+
+    for df in result_list:
+
+        temp_normalized_df = df['dir cat'].value_counts(normalize=True)
+        temp_grouped_df = df.groupby(pd.Grouper(freq=freq_time,origin='start')).mean()
+
+        for chosen_bin in bins_var:
+            temp_grouped_df[chosen_bin]=temp_normalized_df[chosen_bin]
+
+        final_list.append(temp_grouped_df)
+
+    df_final = pd.concat(final_list, axis=0)    
+    
+    return df_final
+    
+    
+#WINDROSE FUNCTION:
+
+def wind_rose(df):
+    
+
+    final_df = group_bin_concat(df)
+    wd = final_df['Wind Dir']
+    ws = final_df['Wind Speed']
+
+    ax = WindroseAxes.from_ax()
+    ax.bar(wd, ws, normed=True, opening=0.8, edgecolor='white',blowto=True)
+    ax.set_legend()
+    
+wind_rose(df_new)
+
